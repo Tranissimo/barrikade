@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<!-- v2: fixed stray braces after handleFieldClickForBarricadePlacement -->
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yvi's Barrikade – Originalregel</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #f0f0f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    .board-container { border: 20px solid #8B4513; border-image: url('https://upload.wikimedia.org/wikipedia/commons/a/a7/Hintergrundkachel2.png') 30 stretch; border-radius: 15px; padding: 20px; background-image: url('https://upload.wikimedia.org/wikipedia/commons/3/3a/Hintergrundkachel2neu.png'); background-size: cover; background-color: #A0522D; box-shadow: 5px 5px 15px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; max-width: 100%; overflow: auto; }
+    .board { display: grid; grid-template-columns: repeat(17, 35px); grid-template-rows: repeat(18, 35px); gap: 3px; background-image: url('https://upload.wikimedia.org/wikipedia/commons/e/ec/Hintergrundkachel.png?20250713203120'); background-repeat: repeat; background-size: 150px 150px; background-color: #A0522D; padding: 10px; border-radius: 10px; box-shadow: inset 0 0 10px rgba(0,0,0,0.3); }
+    .field { width: 30px; height: 30px; border: 1px solid #6B4226; border-radius: 50%; display: flex; justify-content: center; align-items: center; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); position: relative; }
+    .field.white { background-color: white; } .field.red { background-color: red; } .field.green { background-color: green; } .field.yellow { background-color: yellow; } .field.blue { background-color: blue; }
+    .field.i1-multicolor { background: conic-gradient(red 0% 25%, green 25% 50%, yellow 50% 75%, blue 75% 100%); }
+    .piece { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(0,0,0,0.3); box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+    .piece.red { background-color: darkred; } .piece.green { background-color: darkgreen; } .piece.yellow { background-color: goldenrod; } .piece.blue { background-color: darkblue; } .piece.black { background-color: black; }
+    .die { width: 38px; height: 38px; border: 3px solid #333; border-radius: 7px; display: flex; justify-content: center; align-items: center; font-size: 1.5em; font-weight: bold; color: white; box-shadow: 3px 3px 6px rgba(0,0,0,0.5); cursor: pointer; transition: transform 0.1s ease-in-out; }
+    .die:active { transform: scale(0.95); } .die.red { background-color: red; } .die.green { background-color: green; } .die.yellow { background-color: yellow; } .die.blue { background-color: blue; }
+    .selected-piece { border: 3px solid gold; box-shadow: 0 0 15px gold; }
+    .selectable-piece { border: 2px dashed cyan; cursor: pointer; }
+    .possible-move { background-color: rgba(0,255,0,0.3); cursor: pointer; }
+    @keyframes wobble { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-5deg)} 50%{transform:rotate(5deg)} 75%{transform:rotate(-5deg)} }
+    .wobble-die { animation: wobble 0.5s ease-in-out infinite; }
+    #turnIndicator { font-size: 1.5em; font-weight: bold; margin-top: 20px; text-shadow: 5px 5px 10px rgba(0,0,0,0.9); }
+    .dragged-barricade { pointer-events: none; z-index: 1000; transition: none; }
+    .field.barricade-target-valid { background-color: rgba(0,255,0,0.5); border: 2px dashed lime; }
+    .field.barricade-target-invalid { background-color: rgba(255,0,0,0.5); border: 2px dashed red; }
+    @media (max-width: 768px) { .board-container { border-width: 10px; padding: 10px; } .board { grid-template-columns: repeat(17,28px); grid-template-rows: repeat(18,28px); gap: 2px; } .field { width: 25px; height: 25px; } .piece { width: 16px; height: 16px; } .die { width: 30px; height: 30px; font-size: 1.2em; } #turnIndicator { font-size: 1.2em; margin-top: 15px; } }
+    @media (max-width: 480px) { .board-container { border-width: 5px; padding: 5px; } .board { grid-template-columns: repeat(17,22px); grid-template-rows: repeat(18,22px); gap: 1px; } .field { width: 18px; height: 18px; } .piece { width: 12px; height: 12px; } .die { width: 23px; height: 23px; font-size: 1em; } #turnIndicator { font-size: 1em; margin-top: 10px; } }
+  </style>
+</head>
+<body>
+  <div class="board-container">
+    <h1 class="text-white text-3xl font-bold mb-6">Barriakaden für alle!</h1>
+    <div id="gameBoard" class="board"></div>
+    <div id="turnIndicator" class="text-lg font-bold mt-4"></div>
+    <div class="mt-4 flex gap-3 flex-wrap items-center">
+      <button id="btnNewGame" class="px-3 py-2 rounded-xl bg-white/90 hover:bg-white shadow">Neues Spiel</button>
+      <button id="btnReSetup" class="px-3 py-2 rounded-xl bg-white/90 hover:bg-white shadow">Erneut einrichten</button>
+      <span class="text-white/90 text-sm">Tipp: Klicke auf deinen farbigen Würfel, um zu starten.</span>
+    </div>
+    <div id="playerBar" class="mt-2 w-full flex flex-wrap gap-2"></div>
+
+    <!-- Testpanel -->
+    <details id="testPanel" class="mt-4 w-full max-w-xl bg-white/90 rounded-xl p-3 shadow">
+      <summary class="cursor-pointer select-none">Selbsttests (aufklappen)</summary>
+      <pre id="testOutput" class="text-xs whitespace-pre-wrap"></pre>
+    </details>
+  </div>
+
+  <!-- Setup Modal (statisch im DOM, via JS sichtbar/unsichtbar) -->
+  <div id="setupModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-[9999]">
+    <div class="bg-white rounded-2xl p-6 w-[min(90vw,560px)] shadow-xl">
+      <h2 class="text-xl font-bold mb-4">Spiel einrichten</h2>
+      <div class="flex items-center gap-4 text-sm text-gray-600 mb-2">
+        <span>👤 Mensch</span>
+        <span>🤖 Computer</span>
+      </div>
+      <label class="block text-sm font-medium mb-1">Anzahl menschlicher Spieler</label>
+      <select id="humanCount" class="w-full border rounded-lg p-2 mb-4">
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+      </select>
+      <div id="nameInputs" class="space-y-2 mb-3">
+        <div id="nameRow1" class="flex items-center gap-2"><span class="w-5 text-lg" aria-hidden="true">👤</span><span class="text-sm w-24">Spieler 1</span><input id="name1" class="flex-1 border rounded-lg p-2" placeholder="Name" /></div>
+        <div id="nameRow2" class="flex items-center gap-2 hidden"><span class="w-5 text-lg" aria-hidden="true">👤</span><span class="text-sm w-24">Spieler 2</span><input id="name2" class="flex-1 border rounded-lg p-2" placeholder="Name" /></div>
+        <div id="nameRow3" class="flex items-center gap-2 hidden"><span class="w-5 text-lg" aria-hidden="true">👤</span><span class="text-sm w-24">Spieler 3</span><input id="name3" class="flex-1 border rounded-lg p-2" placeholder="Name" /></div>
+        <div id="nameRow4" class="flex items-center gap-2 hidden"><span class="w-5 text-lg" aria-hidden="true">👤</span><span class="text-sm w-24">Spieler 4</span><input id="name4" class="flex-1 border rounded-lg p-2" placeholder="Name" /></div>
+      </div>
+      <div id="aiPreview" class="space-y-1 mb-4"></div>
+      <div class="flex justify-end gap-3">
+        <button id="btnCancelSetup" type="button" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300">Abbrechen</button>
+        <button id="btnStartGame" type="button" class="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Starten</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win Modal -->
+  <div id="winModal" class="fixed inset-0 bg-black/60 hidden items-center justify-center z-[10000]">
+    <div class="bg-white rounded-2xl p-6 w-[min(90vw,560px)] shadow-xl text-center">
+      <h2 id="winTitle" class="text-2xl font-extrabold mb-2">Herzlichen Glückwunsch, du hast das Spiel gewonnen!</h2>
+      <p id="winSubtitle" class="mb-6 text-lg">Sieger: <span id="winName" class="font-bold"></span></p>
+      <div class="flex justify-center gap-3">
+        <button id="btnWinNewGame" class="px-3 py-2 rounded-lg bg-gray-200 hover:bg-gray-300">Neues Spiel</button>
+        <button id="btnWinReSetup" class="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Erneut einrichten</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ======= Zustände
+    let currentPlayerIndex = 0;
+    let diceValue = 0;
+    let selectedPiece = null;
+    let selectedPieceId = null;
+    let currentPossibleTargetFields = [];
+    let gameSetupComplete = false;
+    let gameOver = false;
+    let winnerInfo = null;
+
+    let draggedBarricade = null;
+    let isPlacingBarricade = false;
+    let homeAttemptsLeft = 0;         // 3 Startversuche (nur wenn alle im Heim)
+    const goalFieldId = 'I1';
+    let forcedEntryPieceId = null;
+
+    // ======= Spieler
+    const players = [
+      { color: 'red', entryField: 'C14', homeFields: ['B16','D16','B17','D17','C15'], pieces: [
+        { id: 'redPiece1', currentField: 'B16', home: true },
+        { id: 'redPiece2', currentField: 'D16', home: true },
+        { id: 'redPiece3', currentField: 'B17', home: true },
+        { id: 'redPiece4', currentField: 'D17', home: true },
+        { id: 'redPiece5', currentField: 'C15', home: true }, ] },
+      { color: 'green', entryField: 'G14', homeFields: ['F16','H16','F17','H17','G15'], pieces: [
+        { id: 'greenPiece1', currentField: 'F16', home: true },
+        { id: 'greenPiece2', currentField: 'H16', home: true },
+        { id: 'greenPiece3', currentField: 'F17', home: true },
+        { id: 'greenPiece4', currentField: 'H17', home: true },
+        { id: 'greenPiece5', currentField: 'G15', home: true }, ] },
+      { color: 'yellow', entryField: 'K14', homeFields: ['J16','L16','J17','L17','K15'], pieces: [
+        { id: 'yellowPiece1', currentField: 'J16', home: true },
+        { id: 'yellowPiece2', currentField: 'L16', home: true },
+        { id: 'yellowPiece3', currentField: 'J17', home: true },
+        { id: 'yellowPiece4', currentField: 'L17', home: true },
+        { id: 'yellowPiece5', currentField: 'K15', home: true }, ] },
+      { color: 'blue', entryField: 'O14', homeFields: ['N16','P16','N17','P17','O15'], pieces: [
+        { id: 'bluePiece1', currentField: 'N16', home: true },
+        { id: 'bluePiece2', currentField: 'P16', home: true },
+        { id: 'bluePiece3', currentField: 'N17', home: true },
+        { id: 'bluePiece4', currentField: 'P17', home: true },
+        { id: 'bluePiece5', currentField: 'O15', home: true }, ] }
+    ];
+
+    // Anfangs-Barrikaden (keine in Zeile 14 / keine auf Start- oder Zielfeld)
+    const blackPieceFields = ['A12','E12','I12','M12','Q12','G8','K8','I6','I5','I4','I2'];
+
+    // DOM-Mapping
+    const fieldElements = {}; const dieElements = {};
+
+    const diceDefinitions = [
+      { id: 'redDie', row: 18, col: 3, color: 'red', value: 1 },
+      { id: 'greenDie', row: 18, col: 7, color: 'green', value: 1 },
+      { id: 'yellowDie', row: 18, col: 11, color: 'yellow', value: 1 },
+      { id: 'blueDie', row: 18, col: 15, color: 'blue', value: 1 },
+    ];
+
+    const germanColorNames = { red: 'Rot', green: 'Grün', yellow: 'Gelb', blue: 'Blau' };
+
+    function getColChar(colIndex){ return String.fromCharCode(64 + colIndex); }
+    function fieldIdToCoords(fieldId){ const colChar = fieldId.match(/[A-Z]/)[0]; const rowNum = parseInt(fieldId.match(/\d+/)[0]); const colNum = colChar.charCodeAt(0) - 64; return { col: colNum, row: rowNum }; }
+    function coordsToFieldId(coords){ if (coords.col < 1 || coords.col > 17 || coords.row < 1 || coords.row > 18) return null; const colChar=String.fromCharCode(64+coords.col); return colChar+coords.row; }
+    function isCellInDefinitions(cellId, definitions){ for (const def of definitions){ if(def.includes('-')){ const m=def.match(/([A-Z])(\d+)-([A-Z])(\d+)/); if(!m) continue; const [_, sc, sr, ec, er] = m; const startCol=sc.charCodeAt(0)-64; const endCol=ec.charCodeAt(0)-64; const startRow=parseInt(sr); const endRow=parseInt(er); const currentColChar=cellId.match(/[A-Z]/)[0]; const currentRow=parseInt(cellId.match(/\d+/)[0]); const currentCol=currentColChar.charCodeAt(0)-64; if(currentRow>=startRow&&currentRow<=endRow&&currentCol>=startCol&&currentCol<=endCol) return true; } else { if(cellId===def) return true; } } return false; }
+
+    // --- Brett-Graph (bidirektional, korrigiert) ---
+    const boardConnections = {
+      'I1':['I2'],
+      'I2':['I1','H2','J2','I3'],
+      'A2':['B2','A3'],'B2':['A2','C2'],'C2':['B2','D2'],'D2':['C2','E2'],'E2':['D2','F2'],
+      'F2':['E2','G2'],'G2':['F2','H2'],'H2':['G2','I2'],'J2':['I2','K2'],'K2':['J2','L2'],
+      'L2':['K2','M2'],'M2':['L2','N2'],'N2':['M2','O2'],'O2':['N2','P2'],'P2':['O2','Q2'],
+      'Q2':['P2','Q3'],'A3':['A2','A4'],'I3':['I2','I4'],'Q3':['Q2','Q4'],
+      'A4':['A3','B4'],'B4':['A4','C4'],'C4':['B4','D4'],'D4':['C4','E4'],'E4':['D4','F4'],
+      'F4':['E4','G4'],'G4':['F4','H4'],'H4':['G4','I4'],'I4':['H4','J4','I3','I5'],
+      'J4':['I4','K4'],'K4':['J4','L4'],'L4':['K4','M4'],'M4':['L4','N4'],'N4':['M4','O4'],
+      'O4':['N4','P4'],'P4':['O4','Q4'],'Q4':['Q3','P4'],
+      'I5':['I4','I6'],
+      'G6':['H6','G7'],'H6':['G6','I6'],'I6':['H6','J6','I5','I7'],'J6':['I6','K6'],'K6':['J6','K7'],
+      'G7':['G6','G8'],'I7':['I6','I8'],'K7':['K6','K8'],
+      'E8':['F8','E9'],'F8':['E8','G8'],'G8':['F8','H8','G7','G9'],'H8':['G8','I8'],
+      'I8':['H8','J8','I7','I9'],'J8':['I8','K8'],'K8':['J8','L8','K7','K9'],'L8':['K8','M8'],'M8':['L8','M9'],
+      'E9':['E8','E10'],'G9':['G8','G10'],'I9':['I8','I10'],'K9':['K8','K10'],'M9':['M8','M10'],
+      'C10':['D10','C11'],'D10':['C10','E10'],'E10':['D10','F10','E9','E11'],
+      'F10':['E10','G10'],'G10':['F10','H10','G9','G11'],'H10':['G10','I10'],
+      'I10':['H10','J10','I9','I11'],'J10':['I10','K10'],'K10':['J10','L10','K9','K11'],
+      'L10':['K10','M10'],'M10':['L10','N10','M9','M11'],'N10':['M10','O10'],'O10':['N10','O11'],
+      'C11':['C10','C12'],'E11':['E10','E12'],'G11':['G10','G12'],'I11':['I10','I12'],
+      'K11':['K10','K12'],'M11':['M10','M12'],'O11':['O10','O12'],
+      'A12':['B12','A13'],'B12':['A12','C12'],'C12':['B12','D12','C11'],'D12':['C12','E12'],
+      'E12':['D12','F12','E11','E13'],'F12':['E12','G12'],'G12':['F12','H12','G11'],
+      'H12':['G12','I12'],'I12':['H12','J12','I11','I13'],'J12':['I12','K12'],
+      'K12':['J12','L12','K11'],'L12':['K12','M12'],'M12':['L12','N12','M11','M13'],
+      'N12':['M12','O12'],'O12':['N12','P12','O11'],'P12':['O12','Q12'],'Q12':['P12','Q13'],
+      'A13':['A12','A14'],'E13':['E12','E14'],'I13':['I12','I14'],'M13':['M12','M14'],'Q13':['Q12','Q14'],
+      'A14':['A13','B14'],'B14':['A14','C14'],'C14':['B14','D14'],'D14':['C14','E14'],'E14':['D14','F14','E13'],
+      'F14':['E14','G14'],'G14':['F14','H14'],'H14':['G14','I14'],'I14':['H14','J14','I13'],
+      'J14':['I14','K14'],'K14':['J14','L14'],'L14':['K14','M14'],'M14':['L14','N14','M13'],
+      'N14':['M14','O14'],'O14':['N14','P14'],'P14':['O14','Q14'],'Q14':['P14','Q13'],
+      'C15':[],'B16':[],'D16':[],'B17':[],'D17':[],'G15':[],'F16':[],'H16':[],'F17':[],'H17':[],'K15':[],'J16':[],'L16':[],'J17':[],'L17':[],'O15':[],'N16':[],'P16':[],'N17':[],'P17':[]
+    };
+
+    function renderPlayerBar(){ const bar=document.getElementById('playerBar'); bar.innerHTML=''; players.forEach(p=>{ const chip=document.createElement('span'); chip.className='inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white/80 shadow text-sm'; const icon=document.createElement('span'); icon.textContent=p.isAI? '🤖':'👤'; icon.className='text-lg'; const dot=document.createElement('span'); dot.className='inline-block w-2.5 h-2.5 rounded-full'; dot.style.background=p.color; const name=document.createElement('span'); name.textContent=p.name||germanColorNames[p.color]; chip.appendChild(icon); chip.appendChild(dot); chip.appendChild(name); bar.appendChild(chip); }); }
+
+    function updateTurnDisplay(){ const ti=document.getElementById('turnIndicator'); const pl=players[currentPlayerIndex]; const colorName=germanColorNames[pl.color]; const displayName=pl.name||colorName; if(!gameSetupComplete){ ti.textContent='Spiel einrichten …'; ti.style.color='#fff'; document.querySelectorAll('.die').forEach(d=>{d.classList.remove('wobble-die'); d.style.pointerEvents='none';}); return; } if (gameOver){ ti.textContent='Spiel beendet'; ti.style.color='#fff'; document.querySelectorAll('.die').forEach(d=>{d.classList.remove('wobble-die'); d.style.pointerEvents='none';}); return; } ti.textContent=`Am Zug: ${displayName} (${colorName})`; ti.style.color=pl.color; document.querySelectorAll('.die').forEach(d=>{d.classList.remove('wobble-die'); d.style.pointerEvents='none';}); const die=dieElements[pl.color+'Die']; if(!die) return; if(pl.isAI){ setTimeout(()=>{ if(diceValue===0 && !isPlacingBarricade) rollDice(die); },400);} else { die.classList.add('wobble-die'); die.style.pointerEvents='auto'; } }
+
+    function checkPossibleMovesForPiece(pieceId, steps){ const pl=players[currentPlayerIndex]; const piece=pl.pieces.find(p=>p.id===pieceId); if(!piece||piece.home) return []; const start=piece.currentField; const possible=new Set(); const q=[{id:start,step:0,prev:null}]; const seen=new Set(); while(q.length){ const {id,step,prev}=q.shift(); const key=id+'-'+step+'-'+prev; if(seen.has(key)) continue; seen.add(key); if(step===steps){ const el=fieldElements[id]; if(!el) continue; const occ=el.querySelector('.piece'); const isOwn=occ && occ.classList.contains(pl.color); const isHome=players.some(p=>p.homeFields.includes(id)); if(!isOwn && !isHome) possible.add(id); continue; } if(step>steps) continue; const neigh=boardConnections[id]||[]; for(const nx of neigh){ if(nx===prev) continue; const nxEl=fieldElements[nx]; if(!nxEl) continue; const occ=nxEl.querySelector('.piece'); const isBlack=occ && occ.classList.contains('black'); if(isBlack && step+1<steps) continue; q.push({id:nx,step:step+1,prev:id}); } } return Array.from(possible); }
+
+    function checkAnyPieceCanMove(steps){ const pl=players[currentPlayerIndex]; for(const p of pl.pieces){ if(!p.home){ const t=checkPossibleMovesForPiece(p.id,steps); if(t.length) return true; } } return false; }
+
+    function highlightPossibleMoves(){
+      document.querySelectorAll('.possible-move').forEach(f=>f.classList.remove('possible-move'));
+      document.querySelectorAll('.selectable-piece').forEach(p=>p.classList.remove('selectable-piece'));
+
+      const pl = players[currentPlayerIndex];
+      const someInHome = pl.pieces.some(p=>p.home);
+      const entryEl = fieldElements[pl.entryField];
+      const occ = entryEl ? entryEl.querySelector('.piece') : null;
+      const mustForce = !!(someInHome && occ && occ.classList.contains(pl.color));
+
+      if(mustForce){
+        forcedEntryPieceId = occ.id;
+        const el = document.getElementById(forcedEntryPieceId);
+        if(el){
+          const t = checkPossibleMovesForPiece(forcedEntryPieceId, diceValue);
+          if(t.length) el.classList.add('selectable-piece');
+        }
+        return;
+      } else {
+        forcedEntryPieceId = null;
+      }
+
+      pl.pieces.forEach(pd=>{
+        if(!pd.home){
+          const el = document.getElementById(pd.id);
+          if(el){
+            const t = checkPossibleMovesForPiece(pd.id, diceValue);
+            if(t.length) el.classList.add('selectable-piece');
+          }
+        }
+      });
+    }
+
+    function highlightTargetFieldsForSelectedPiece(pieceId, steps){ document.querySelectorAll('.possible-move').forEach(f=>f.classList.remove('possible-move')); const t=checkPossibleMovesForPiece(pieceId,steps); currentPossibleTargetFields=t; t.forEach(fid=>{ const fel=fieldElements[fid]; if(fel) fel.classList.add('possible-move'); }); }
+
+    function moveCapturedPieceToHome(pieceEl){ const classes=[...pieceEl.classList]; const col=['red','green','yellow','blue'].find(c=>classes.includes(c)); const opp=players.find(p=>p.color===col); if(!opp) return; const targetHome=opp.homeFields.find(h=>{ const el=fieldElements[h]; return el && !el.querySelector('.piece'); }); if(targetHome){ fieldElements[targetHome].appendChild(pieceEl); const data=opp.pieces.find(px=>px.id===pieceEl.id); if(data){ data.currentField=targetHome; data.home=true; } } }
+
+    function selectPiece(pieceElement, pieceId){
+      const pl = players[currentPlayerIndex];
+      const pd = pl.pieces.find(p=>p.id===pieceId);
+      if(gameOver) return;
+      if(!pd || pd.home) return;
+      if(diceValue===0 || isPlacingBarricade) return;
+      if(!pieceElement.classList.contains(pl.color)) return;
+
+      const someInHome = pl.pieces.some(p=>p.home);
+      const entryEl = fieldElements[pl.entryField];
+      const occ = entryEl ? entryEl.querySelector('.piece') : null;
+      if(someInHome && occ && occ.classList.contains(pl.color) && pieceId !== occ.id){
+        return;
+      }
+
+      if(selectedPiece) selectedPiece.classList.remove('selected-piece');
+      document.querySelectorAll('.selectable-piece').forEach(p=>p.classList.remove('selectable-piece'));
+      selectedPiece = pieceElement;
+      selectedPieceId = pieceId;
+      selectedPiece.classList.add('selected-piece');
+      highlightTargetFieldsForSelectedPiece(pieceId, diceValue);
+    }
+
+    function movePiece(targetFieldId){
+      if(!selectedPiece || diceValue===0) return;
+      if(isPlacingBarricade) return;
+      if(!currentPossibleTargetFields.includes(targetFieldId)) return;
+
+      const pl = players[currentPlayerIndex];
+      const pd = pl.pieces.find(p=>p.id===selectedPieceId);
+      if(!pd) return;
+
+      const from = fieldElements[pd.currentField];
+      const to = fieldElements[targetFieldId];
+      let waitingForBarricadePlacement = false;
+
+      const occ = to.querySelector('.piece');
+      if(occ && occ.classList.contains('black')){
+        to.removeChild(occ);
+        const idx = blackPieceFields.indexOf(targetFieldId);
+        if(idx>-1) blackPieceFields.splice(idx,1);
+
+        if(pl.isAI){
+          const candidates = Object.keys(fieldElements).filter(id=>isValidBarricadePlacement(id));
+          if(candidates.length){
+            const pick = candidates[Math.floor(Math.random()*candidates.length)];
+            fieldElements[pick].appendChild(occ);
+            blackPieceFields.push(pick);
+          }
+        } else {
+          draggedBarricade = occ;
+          isPlacingBarricade = true;
+          waitingForBarricadePlacement = true;
+          draggedBarricade.style.position='absolute';
+          draggedBarricade.style.pointerEvents='none';
+          draggedBarricade.classList.add('dragged-barricade');
+          document.body.appendChild(draggedBarricade);
+          document.addEventListener('mousemove', handleMouseMoveForBarricadePlacement);
+          document.getElementById('gameBoard').addEventListener('click', handleFieldClickForBarricadePlacement, true);
+        }
+      } else if(occ && !occ.classList.contains(pl.color)){
+        moveCapturedPieceToHome(occ);
+      }
+
+      if(from && from.contains(selectedPiece)) from.removeChild(selectedPiece);
+      to.appendChild(selectedPiece);
+      pd.currentField = targetFieldId;
+      pd.home = false;
+      if(forcedEntryPieceId===pd.id) forcedEntryPieceId=null;
+
+      if(targetFieldId===goalFieldId){
+        gameOver = true;
+        winnerInfo = { color: pl.color, name: (pl.name && pl.name.trim()) ? pl.name : germanColorNames[pl.color] };
+        document.querySelectorAll('.die').forEach(d=>{d.style.pointerEvents='none'; d.classList.remove('wobble-die');});
+        showWinModal(pl);
+        return;
+      }
+
+      selectedPiece.classList.remove('selected-piece');
+      selectedPiece=null; selectedPieceId=null;
+      document.querySelectorAll('.possible-move').forEach(f=>f.classList.remove('possible-move'));
+      document.querySelectorAll('.selectable-piece').forEach(p=>p.classList.remove('selectable-piece'));
+      currentPossibleTargetFields=[];
+
+      if(waitingForBarricadePlacement){
+        return;
+      }
+
+      if(diceValue===6){
+        diceValue=0;
+        const die=dieElements[pl.color+'Die'];
+        if(die){ die.style.pointerEvents='auto'; die.classList.add('wobble-die'); }
+        updateTurnDisplay();
+        return;
+      }
+      endTurn();
+    }
+
+    function endTurn(){
+      if(selectedPiece) selectedPiece.classList.remove('selected-piece');
+      selectedPiece=null; selectedPieceId=null; diceValue=0; isPlacingBarricade=false; draggedBarricade=null; forcedEntryPieceId=null;
+      document.removeEventListener('mousemove',handleMouseMoveForBarricadePlacement);
+      const gb=document.getElementById('gameBoard'); if(gb) gb.removeEventListener('click',handleFieldClickForBarricadePlacement,true);
+      document.querySelectorAll('.field').forEach(f=>f.classList.remove('barricade-target-valid','barricade-target-invalid','possible-move'));
+      document.querySelectorAll('.selectable-piece').forEach(p=>p.classList.remove('selectable-piece'));
+      currentPlayerIndex=(currentPlayerIndex+1)%players.length; updateTurnDisplay(); }
+
+    function isValidBarricadePlacement(targetFieldId){ const el=fieldElements[targetFieldId]; if(!el) return false; const coords=fieldIdToCoords(targetFieldId); if(coords && coords.row===14) return false; const entryFields=players.map(p=>p.entryField); if(entryFields.includes(targetFieldId)) return false; const isHome=players.some(p=>p.homeFields.includes(targetFieldId)); if(isHome) return false; if(el.querySelector('.piece')) return false; if(targetFieldId===goalFieldId) return false; return true; }
+
+    function handleMouseMoveForBarricadePlacement(e){ if(!(isPlacingBarricade && draggedBarricade)) return; const w=draggedBarricade.offsetWidth, h=draggedBarricade.offsetHeight; draggedBarricade.style.left=`${e.clientX-w/2}px`; draggedBarricade.style.top=`${e.clientY-h/2}px`; document.querySelectorAll('.field').forEach(f=>f.classList.remove('barricade-target-valid','barricade-target-invalid')); const tf=e.target.closest('.field'); if(tf){ const id=tf.id.replace('field-',''); if(isValidBarricadePlacement(id)) tf.classList.add('barricade-target-valid'); else tf.classList.add('barricade-target-invalid'); } }
+
+    function handleFieldClickForBarricadePlacement(e){
+      if(!(isPlacingBarricade && draggedBarricade)) return;
+      const tf=e.target.closest('.field');
+      if(!tf) return;
+      const id=tf.id.replace('field-','');
+      if(isValidBarricadePlacement(id)){
+        fieldElements[id].appendChild(draggedBarricade);
+        draggedBarricade.style.position=''; draggedBarricade.style.left=''; draggedBarricade.style.top='';
+        draggedBarricade.classList.remove('dragged-barricade'); draggedBarricade.style.pointerEvents='auto';
+        blackPieceFields.push(id);
+        draggedBarricade=null; isPlacingBarricade=false;
+        document.removeEventListener('mousemove',handleMouseMoveForBarricadePlacement);
+        document.getElementById('gameBoard').removeEventListener('click',handleFieldClickForBarricadePlacement,true);
+        document.querySelectorAll('.field').forEach(f=>f.classList.remove('barricade-target-valid','barricade-target-invalid'));
+        const pl = players[currentPlayerIndex];
+        if(diceValue===6){
+          diceValue=0;
+          const die=dieElements[pl.color+'Die'];
+          if(die){ die.style.pointerEvents='auto'; die.classList.add('wobble-die'); }
+          updateTurnDisplay();
+        } else {
+          endTurn();
+        }
+      }
+    }
+    function showWinModal(pl){ const modal=document.getElementById('winModal'); const nameEl=document.getElementById('winName'); const title=document.getElementById('winTitle'); const subtitle=document.getElementById('winSubtitle'); const displayName=(pl.name&&pl.name.trim())?pl.name:germanColorNames[pl.color]; nameEl.textContent=displayName; nameEl.style.color=pl.color; title.style.color=pl.color; subtitle.style.color=pl.color; modal.classList.remove('hidden'); modal.style.display='flex'; const btnNG=document.getElementById('btnWinNewGame'); const btnRS=document.getElementById('btnWinReSetup'); if(btnNG){ btnNG.onclick=()=>location.reload(); } if(btnRS){ btnRS.onclick=()=>{ modal.classList.add('hidden'); modal.style.display='none'; openSetupForReconfig(); }; } }
+
+    function rollDice(dieElement){ if(diceValue!==0 || isPlacingBarricade || gameOver) return; const n=Math.floor(Math.random()*6)+1; diceValue=n; dieElement.textContent=n; dieElement.classList.remove('wobble-die'); document.querySelectorAll('.die').forEach(d=>d.style.pointerEvents='none'); const pl=players[currentPlayerIndex]; const allInHome=pl.pieces.every(p=>p.home);
+      if(allInHome){ if(n===6){ const placedId=placeOneFromHomeToEntry(pl);
+        if(placedId){ forcedEntryPieceId = pl.pieces.some(p=>p.home) ? placedId : null; diceValue=0; updateTurnDisplay(); return; } } homeAttemptsLeft=(homeAttemptsLeft||3)-1; if(homeAttemptsLeft>0){ diceValue=0; updateTurnDisplay(); return; } homeAttemptsLeft=0; endTurn(); return; }
+      if(n===6){ const someInHome=pl.pieces.some(p=>p.home); if(someInHome){ const entryId=pl.entryField; const entryEl=fieldElements[entryId]; const occ=entryEl?entryEl.querySelector('.piece'):null; if(!occ){ const placedId=placeOneFromHomeToEntry(pl);
+        if(placedId){ forcedEntryPieceId = pl.pieces.some(p=>p.home) ? placedId : null; diceValue=0; updateTurnDisplay(); return; } } else if(occ.classList.contains(pl.color)){ const pid=occ.id; const targets=checkPossibleMovesForPiece(pid,n); if(targets.length){ selectedPiece=occ; selectedPieceId=pid; currentPossibleTargetFields=targets; document.querySelectorAll('.possible-move').forEach(f=>f.classList.remove('possible-move')); targets.forEach(fid=>{ const fe=fieldElements[fid]; if(fe) fe.classList.add('possible-move'); }); if(pl.isAI){ setTimeout(()=>movePiece(targets[Math.floor(Math.random()*targets.length)]), 350); } return; } else { setTimeout(endTurn,350); return; } } else { const placedId=placeOneFromHomeToEntry(pl);
+        if(placedId){ forcedEntryPieceId = pl.pieces.some(p=>p.home) ? placedId : null; diceValue=0; updateTurnDisplay(); return; }
+        } }
+      }
+      if(checkAnyPieceCanMove(n)){ highlightPossibleMoves(); if(pl.isAI) setTimeout(aiPerformMove, 450); } else { setTimeout(endTurn, 350); } }
+
+    function placeOneFromHomeToEntry(player){
+      const entryId = player.entryField;
+      const entryEl = fieldElements[entryId];
+      if(!entryEl) return null;
+      const occ = entryEl.querySelector('.piece');
+      if(occ){
+        if(occ.classList.contains('black')) return null;
+        if(!occ.classList.contains(player.color)){
+          moveCapturedPieceToHome(occ);
+        } else {
+          return null;
+        }
+      }
+      const pieceToPlace = player.pieces.find(p=>p.home===true);
+      if(!pieceToPlace) return null;
+      const pieceEl = document.getElementById(pieceToPlace.id);
+      const fromEl = fieldElements[pieceToPlace.currentField];
+      if(pieceEl && fromEl){ fromEl.removeChild(pieceEl); }
+      entryEl.appendChild(pieceEl);
+      pieceToPlace.currentField = entryId;
+      pieceToPlace.home = false;
+      return pieceToPlace.id;
+    }
+
+    function aiPerformMove(){
+      const pl = players[currentPlayerIndex];
+      const someInHome = pl.pieces.some(p=>p.home);
+      const entryEl = fieldElements[pl.entryField];
+      const occ = entryEl ? entryEl.querySelector('.piece') : null;
+      if(someInHome && occ && occ.classList.contains(pl.color)){
+        const t = checkPossibleMovesForPiece(occ.id, diceValue);
+        if(t.length){
+          selectedPiece = document.getElementById(occ.id);
+          selectedPieceId = occ.id;
+          currentPossibleTargetFields = t;
+          movePiece(t[Math.floor(Math.random()*t.length)]);
+        } else {
+          endTurn();
+        }
+        return;
+      }
+      const candidates = [];
+      pl.pieces.forEach(p=>{
+        if(!p.home){
+          const t = checkPossibleMovesForPiece(p.id, diceValue);
+          if(t.length) candidates.push({id:p.id, targets:t});
+        }
+      });
+      if(candidates.length===0){ endTurn(); return; }
+      const pick = candidates[Math.floor(Math.random()*candidates.length)];
+      const el = document.getElementById(pick.id);
+      if(!el){ endTurn(); return; }
+      selectedPiece = el; selectedPieceId = pick.id; currentPossibleTargetFields = pick.targets;
+      movePiece(pick.targets[Math.floor(Math.random()*pick.targets.length)]);
+    }
+
+    function createFields(){ const gameBoard=document.getElementById('gameBoard'); gameBoard.innerHTML=''; for(const k in fieldElements) delete fieldElements[k]; const whiteFields=['A2-Q2','A3','Q3','A4-Q4','I5','G6-K6','G7','K7','E8-M8','E9','M9','C10-O10','C11','G11','K11','O11','A12-Q12','A13','E13','I13','M13','Q13','A14','B14','D14-F14','H14-J14','L14-N14','P14','Q14']; const redFields=['C14','B16','D16','B17','D17','C15']; const greenFields=['G14','F16','H16','F17','H17','G15']; const yellowFields=['K14','J16','L16','J17','L17','K15']; const blueFields=['O14','N16','P16','N17','P17','O15']; for(let row=1;row<=18;row++){ for(let col=1;col<=17;col++){ const cellId=String.fromCharCode(64+col)+row; let fieldClass=''; let isDie=false, dieColor='', dieValue=''; const die=diceDefinitions.find(d=>d.row===row&&d.col===col); if(die){ isDie=true; dieColor=die.color; dieValue=die.value; } if(cellId==='I1') fieldClass='i1-multicolor'; else if(isCellInDefinitions(cellId, redFields)) fieldClass='red'; else if(isCellInDefinitions(cellId, greenFields)) fieldClass='green'; else if(isCellInDefinitions(cellId, yellowFields)) fieldClass='yellow'; else if(isCellInDefinitions(cellId, blueFields)) fieldClass='blue'; else if(isCellInDefinitions(cellId, whiteFields)) fieldClass='white'; if(isDie){ const e=document.createElement('div'); e.className=`die ${dieColor}`; e.id=die.id; e.style.gridRow=row; e.style.gridColumn=col; e.textContent=dieValue; e.addEventListener('click',()=>rollDice(e)); dieElements[die.id]=e; gameBoard.appendChild(e);} else if(fieldClass){ const f=document.createElement('div'); f.className=`field ${fieldClass}`; f.id=`field-${cellId}`; f.style.gridRow=row; f.style.gridColumn=col; fieldElements[cellId]=f; f.addEventListener('click',()=>movePiece(cellId)); gameBoard.appendChild(f);} } } }
+
+    function initializeGame(){ players.forEach(player=>{ player.pieces.forEach(pieceData=>{ const field=fieldElements[pieceData.currentField]; if(field){ const piece=document.createElement('div'); piece.className=`piece ${player.color}`; piece.id=pieceData.id; piece.addEventListener('click',ev=>{ ev.stopPropagation(); selectPiece(piece, pieceData.id); }); field.appendChild(piece);} }); }); blackPieceFields.forEach(fid=>{ const coords=fieldIdToCoords(fid); if(coords && coords.row===14) return; const field=fieldElements[fid]; if(field){ const piece=document.createElement('div'); piece.className='piece black'; field.appendChild(piece);} }); const btn=document.getElementById('btnNewGame'); if(btn) btn.addEventListener('click',()=>location.reload()); const btnRe=document.getElementById('btnReSetup'); if(btnRe) btnRe.addEventListener('click', openSetupForReconfig); updateTurnDisplay(); runSelfTests(); }
+
+    // ======= Setup =======
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+
+    function initSetupModal(){ const modal=document.getElementById('setupModal'); const sel=document.getElementById('humanCount'); const aiPreview=document.getElementById('aiPreview'); const btnStart=document.getElementById('btnStartGame'); const btnCancel=document.getElementById('btnCancelSetup'); const namesDiv=document.getElementById('nameInputs'); if(!modal) return; function render(n){ for(let i=1;i<=4;i++){ const row=document.getElementById('nameRow'+i); if(!row) continue; if(i<=n) row.classList.remove('hidden'); else row.classList.add('hidden'); } const numAI=Math.max(0,4-n); if(aiPreview){ if(numAI===0) aiPreview.innerHTML='<div class="text-gray-500">Keine Compi-Spieler</div>'; else { let html=''; for(let i=1;i<=numAI;i++){ html+= '<div class="flex items-center gap-2"><span class="w-5 text-lg" aria-hidden="true">🤖</span><span class="w-24 text-sm">Compi '+i+'</span><span class="text-xs text-gray-500">vom Computer</span></div>'; } aiPreview.innerHTML=html; } } setTimeout(()=>{ const first=namesDiv.querySelector('div:not(.hidden) input'); if(first) first.focus(); },0); } render(parseInt(sel.value||'1',10)); sel.addEventListener('change',()=>render(parseInt(sel.value||'1',10))); btnCancel.addEventListener('click',()=>{ modal.classList.add('hidden'); }); btnStart.addEventListener('click', startGameFromSetup); modal.classList.remove('hidden'); modal.style.display='flex'; }
+
+    function openSetupForReconfig(){ const modal=document.getElementById('setupModal'); if(!modal){ initSetupModal(); return; } modal.classList.remove('hidden'); modal.style.display='flex'; }
+
+    function startGameFromSetup(){ const modal=document.getElementById('setupModal'); const sel=document.getElementById('humanCount'); const n=Math.max(1,Math.min(4,parseInt(sel.value||'1',10))); const names=[]; for(let i=1;i<=n;i++){ const inp=document.getElementById('name'+i); names.push((inp&&inp.value?inp.value:'').trim()||('Spieler '+i)); } const colors=shuffle(['red','green','yellow','blue']); const humanColors=colors.slice(0,n); const aiColors=colors.slice(n); players.forEach(p=>{ p.name=''; p.isAI=true; }); humanColors.forEach((c,idx)=>{ const p=players.find(pl=>pl.color===c); if(p){ p.name=names[idx]; p.isAI=false; } }); aiColors.forEach((c,idx)=>{ const p=players.find(pl=>pl.color===c); if(p){ p.name='Compi '+(idx+1); p.isAI=true; } }); if(modal){ modal.classList.add('hidden'); modal.style.display='none'; } gameSetupComplete=true; renderPlayerBar(); updateTurnDisplay(); }
+
+    // ======= Tests =======
+    function runSelfTests(){ const out=[]; const ok=m=>out.push('✅ '+m); const fail=(m,d)=>out.push('❌ '+m+(d?(' – '+d):'')); ['I1','I2','A2','Q14','C14','G14','K14','O14'].forEach(id=> fieldElements[id]?ok('Feld vorhanden: '+id):fail('Feld fehlt',id)); const edge=(a,b)=> (boardConnections[a]||[]).includes(b); (edge('I2','I3') && edge('I3','I2'))?ok('Graph bidirektional (I2↔I3)'):fail('Graph nicht bidirektional','I2/I3'); players.map(p=>p.entryField).forEach(fid=> isValidBarricadePlacement(fid)?fail('Barrikade auf Startfeld erlaubt',fid):ok('Startfeld gesperrt: '+fid)); isValidBarricadePlacement(goalFieldId)?fail('Zielfeld barrikadierbar',goalFieldId):ok('Zielfeld gesperrt: '+goalFieldId); const pre=document.getElementById('testOutput'); if(pre) pre.textContent=out.join('\n'); }
+
+    // ======= Bootstrap =======
+    document.addEventListener('DOMContentLoaded', ()=>{ createFields(); initializeGame(); initSetupModal(); });
+  </script>
+</body>
+</html>
